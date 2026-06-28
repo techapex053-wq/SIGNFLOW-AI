@@ -84,7 +84,7 @@ export default function App() {
       {/* Main Control Center */}
       <main className="flex-1 grid grid-cols-12 gap-4 min-h-0 overflow-y-auto lg:overflow-hidden pb-2 lg:pb-0">
         {/* Left: Vision Stream & Transcription Ribbon */}
-        <section className="col-span-12 lg:col-span-7 flex flex-col gap-4 min-h-0">
+        <section className="col-span-12 lg:col-span-8 flex flex-col gap-4 min-h-0">
           <VisionStream
             activeScenario={activeScenario}
             onSelectScenario={(sc) => {

@@ -84,6 +84,7 @@ export const VisionStream: React.FC<VisionStreamProps> = ({
   const [jitter, setJitter] = useState<number>(0.12);
   const [isModelLoading, setIsModelLoading] = useState<boolean>(false);
   const [handBox, setHandBox] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const [activeDeckTab, setActiveDeckTab] = useState<"essential" | "demo" | "alphabets" | "all">("essential");
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -126,7 +127,7 @@ export const VisionStream: React.FC<VisionStreamProps> = ({
               });
 
               hands.setOptions({
-                maxNumHands: 1,
+                maxNumHands: 2,
                 modelComplexity: 1,
                 minDetectionConfidence: 0.65,
                 minTrackingConfidence: 0.65
@@ -143,16 +144,19 @@ export const VisionStream: React.FC<VisionStreamProps> = ({
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
 
                 if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                  const l = results.multiHandLandmarks[0];
-                  drawCustomHandSkeleton(ctx, l, canvas.width, canvas.height);
+                  results.multiHandLandmarks.forEach((handLandmarks: any) => {
+                    drawCustomHandSkeleton(ctx, handLandmarks, canvas.width, canvas.height);
+                  });
 
-                  // Calculate real bounding box
+                  // Calculate combined bounding box across all hands
                   let minX = 1, maxX = 0, minY = 1, maxY = 0;
-                  l.forEach((p: any) => {
-                    if (p.x < minX) minX = p.x;
-                    if (p.x > maxX) maxX = p.x;
-                    if (p.y < minY) minY = p.y;
-                    if (p.y > maxY) maxY = p.y;
+                  results.multiHandLandmarks.forEach((handLandmarks: any) => {
+                    handLandmarks.forEach((p: any) => {
+                      if (p.x < minX) minX = p.x;
+                      if (p.x > maxX) maxX = p.x;
+                      if (p.y < minY) minY = p.y;
+                      if (p.y > maxY) maxY = p.y;
+                    });
                   });
                   const boxLeft = Math.max(2, (1 - maxX) * 100 - 3);
                   const boxTop = Math.max(2, minY * 100 - 3);
@@ -160,8 +164,8 @@ export const VisionStream: React.FC<VisionStreamProps> = ({
                   const boxHeight = Math.min(96 - boxTop, (maxY - minY) * 100 + 6);
                   setHandBox({ left: boxLeft, top: boxTop, width: boxWidth, height: boxHeight });
 
-                  // Classify gesture
-                  const sign = classifyHandLandmarks(l);
+                  // Classify gesture passing all detected hands
+                  const sign = classifyHandLandmarks(results.multiHandLandmarks);
                   if (sign.id === lastSignIdRef.current) {
                     signHoldCountRef.current += 1;
                   } else {
@@ -169,8 +173,8 @@ export const VisionStream: React.FC<VisionStreamProps> = ({
                     signHoldCountRef.current = 1;
                   }
 
-                  // Debounce over 4 frames (~130ms) for rock-solid stability
-                  if (signHoldCountRef.current === 4) {
+                  // Fast response (~60ms) for real-time fluidity
+                  if (signHoldCountRef.current === 2 && sign.id !== "none") {
                     onSelectScenario(sign);
                   }
                 } else {
@@ -232,7 +236,7 @@ export const VisionStream: React.FC<VisionStreamProps> = ({
   const activeWord = isCustomMode ? customWord : activeScenario.detectedRawWord;
 
   return (
-    <div className="relative flex-1 bg-black rounded-lg border border-slate-800 overflow-hidden group flex flex-col min-h-[280px] shadow-lg">
+    <div className="relative flex-1 bg-black rounded-lg border border-slate-800 overflow-hidden group flex flex-col min-h-[440px] sm:min-h-[520px] lg:min-h-[600px] shadow-lg">
       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent z-10 pointer-events-none"></div>
 
       {/* Video / Graphic Canvas */}
@@ -248,8 +252,8 @@ export const VisionStream: React.FC<VisionStreamProps> = ({
             />
             <canvas
               ref={canvasRef}
-              width={640}
-              height={480}
+              width={1280}
+              height={720}
               className="absolute inset-0 w-full h-full object-cover pointer-events-none z-15"
             />
           </>
@@ -436,42 +440,105 @@ export const VisionStream: React.FC<VisionStreamProps> = ({
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 overflow-x-auto pb-1">
-            {scenarios.map((sc) => {
-              const isActive = activeScenario.id === sc.id;
-              const isLocal = sc.confidence >= 85;
-              return (
-                <button
-                  key={sc.id}
-                  type="button"
-                  onClick={() => onSelectScenario(sc)}
-                  className={`p-2 rounded border text-left flex flex-col transition-all cursor-pointer relative overflow-hidden group/btn ${
-                    isActive
-                      ? "bg-indigo-950/70 border-indigo-500/80 ring-1 ring-indigo-500 shadow-md shadow-indigo-950"
-                      : "bg-slate-900/60 border-slate-800 hover:bg-slate-800/80 hover:border-slate-700"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-1 w-full">
-                    <span className="text-xs font-semibold text-white truncate group-hover/btn:text-indigo-200 transition-colors">
-                      {sc.targetCorrectedWord}
-                    </span>
-                    <span
-                      className={`text-[9px] font-mono font-bold px-1 py-0.2 rounded shrink-0 ${
-                        isLocal ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400"
+          <div className="flex flex-col gap-2.5">
+            <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-800/80 pb-2">
+              <button
+                type="button"
+                onClick={() => setActiveDeckTab("essential")}
+                className={`px-2.5 py-1 rounded text-[11px] font-medium transition-all cursor-pointer flex items-center gap-1 ${
+                  activeDeckTab === "essential"
+                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30 ring-1 ring-indigo-400"
+                    : "bg-slate-900/90 text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-slate-800"
+                }`}
+              >
+                ⭐ Essential Signs
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveDeckTab("demo")}
+                className={`px-2.5 py-1 rounded text-[11px] font-medium transition-all cursor-pointer flex items-center gap-1 ${
+                  activeDeckTab === "demo"
+                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30 ring-1 ring-indigo-400"
+                    : "bg-slate-900/90 text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-slate-800"
+                }`}
+              >
+                👋 Demo & Greetings
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveDeckTab("alphabets")}
+                className={`px-2.5 py-1 rounded text-[11px] font-medium transition-all cursor-pointer flex items-center gap-1 ${
+                  activeDeckTab === "alphabets"
+                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30 ring-1 ring-indigo-400"
+                    : "bg-slate-900/90 text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-slate-800"
+                }`}
+              >
+                🔤 ASL Alphabets (A-Z)
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveDeckTab("all")}
+                className={`px-2.5 py-1 rounded text-[11px] font-medium transition-all cursor-pointer flex items-center gap-1 ml-auto ${
+                  activeDeckTab === "all"
+                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30 ring-1 ring-indigo-400"
+                    : "bg-slate-900/90 text-slate-400 hover:bg-slate-800 hover:text-slate-200 border border-slate-800"
+                }`}
+              >
+                🌐 All ({scenarios.length})
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-7 gap-1.5 max-h-48 overflow-y-auto pr-1 pb-1">
+              {scenarios
+                .filter((sc) => {
+                  const demoIds = ["hi_pass", "hello_pass", "this_pass", "is_repair", "team_repair", "apex_pass"];
+                  if (activeDeckTab === "essential") {
+                    return !demoIds.includes(sc.id) && !sc.id.startsWith("alphabet_");
+                  }
+                  if (activeDeckTab === "demo") {
+                    return demoIds.includes(sc.id);
+                  }
+                  if (activeDeckTab === "alphabets") {
+                    return sc.id.startsWith("alphabet_");
+                  }
+                  return true;
+                })
+                .map((sc) => {
+                  const isActive = activeScenario.id === sc.id;
+                  const isLocal = sc.confidence >= 85;
+                  return (
+                    <button
+                      key={sc.id}
+                      type="button"
+                      onClick={() => onSelectScenario(sc)}
+                      className={`p-2 rounded border text-left flex flex-col transition-all cursor-pointer relative overflow-hidden group/btn ${
+                        isActive
+                          ? "bg-indigo-950/70 border-indigo-500/80 ring-1 ring-indigo-500 shadow-md shadow-indigo-950"
+                          : "bg-slate-900/60 border-slate-800 hover:bg-slate-800/80 hover:border-slate-700"
                       }`}
                     >
-                      {sc.confidence}%
-                    </span>
-                  </div>
-                  <span className="text-[10px] text-slate-400 truncate mt-0.5">
-                    "{sc.detectedRawWord}" detected
-                  </span>
-                  {isActive && (
-                    <div className="absolute bottom-0 left-0 h-0.5 bg-indigo-400 w-full animate-pulse" />
-                  )}
-                </button>
-              );
-            })}
+                      <div className="flex items-center justify-between gap-1 w-full">
+                        <span className="text-xs font-semibold text-white truncate group-hover/btn:text-indigo-200 transition-colors">
+                          {sc.targetCorrectedWord}
+                        </span>
+                        <span
+                          className={`text-[9px] font-mono font-bold px-1 py-0.2 rounded shrink-0 ${
+                            isLocal ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400"
+                          }`}
+                        >
+                          {sc.confidence}%
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 truncate mt-0.5">
+                        "{sc.detectedRawWord}" detected
+                      </span>
+                      {isActive && (
+                        <div className="absolute bottom-0 left-0 h-0.5 bg-indigo-400 w-full animate-pulse" />
+                      )}
+                    </button>
+                  );
+                })}
+            </div>
           </div>
         )}
       </div>
