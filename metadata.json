@@ -1,0 +1,6 @@
+{
+  "name": "ASL to Voice Translator",
+  "description": "Real-time ASL to Text & Voice Translator with cascadeflow confidence routing and Hindsight contextual memory correction.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
